@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Weekly Hours</title>
+  <meta name="description" content="Enter your weekly work hours, get them formatted and copied in one tap. Works offline, saves on your device.">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%232563eb'/%3E%3Ctext%20x='50'%20y='67'%20font-family='Helvetica,Arial,sans-serif'%20font-size='44'%20font-weight='700'%20text-anchor='middle'%20fill='%23ffffff'%3E7h%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Apply the saved (or system) theme before first paint to avoid a flash.
+    try {
+      var saved = JSON.parse(localStorage.getItem('hoursCalculator.v1'));
+      var theme = (saved && saved.theme) ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+    } catch (e) { /* first visit or blocked storage — CSS default applies */ }
+  </script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Weekly Hours</h1>
+      <button type="button" id="themeToggle" class="btn icon-btn" aria-label="Switch colour theme">🌙</button>
+    </header>
+
+    <section class="card" aria-labelledby="weekHeading">
+      <h2 id="weekHeading" class="visually-hidden">Week selection</h2>
+      <div class="week-nav">
+        <button type="button" id="prevWeekBtn" class="btn icon-btn" aria-label="Previous week">‹</button>
+        <label class="visually-hidden" for="weekPicker">Pick any date in the week</label>
+        <input type="date" id="weekPicker">
+        <button type="button" id="nextWeekBtn" class="btn icon-btn" aria-label="Next week">›</button>
+      </div>
+      <p id="weekLabel" class="week-label"></p>
+    </section>
+
+    <section aria-labelledby="daysHeading">
+      <h2 id="daysHeading" class="visually-hidden">Daily hours</h2>
+      <ul id="daysList" class="days-list"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="previewHeading">
+      <h2 id="previewHeading" class="section-title">Preview</h2>
+      <pre id="preview" aria-live="polite" aria-label="Formatted hours output"></pre>
+      <p id="previewNote" class="preview-note" hidden></p>
+      <button type="button" id="copyBtn" class="btn btn-primary">Copy Hours</button>
+    </section>
+
+    <section class="card" aria-labelledby="actionsHeading">
+      <h2 id="actionsHeading" class="visually-hidden">Week actions</h2>
+      <div class="actions-row">
+        <button type="button" id="duplicateBtn" class="btn">Repeat last week</button>
+        <button type="button" id="restoreBtn" class="btn">Mon–Fri reset</button>
+        <button type="button" id="clearBtn" class="btn btn-danger">Clear week</button>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="backupHeading">
+      <h2 id="backupHeading" class="section-title">Backup &amp; transfer</h2>
+      <div class="backup-row">
+        <button type="button" id="exportBtn" class="btn">Export backup</button>
+        <button type="button" id="importBtn" class="btn">Import backup</button>
+      </div>
+      <p class="backup-note">Save a file to move your hours to another device or keep a copy. Importing merges the file back in and replaces any weeks with matching dates.</p>
+      <input type="file" id="importInput" accept="application/json,.json" hidden>
+    </section>
+
+    <footer class="app-footer">
+      <p>Everything is saved on this device only — no account, no server.</p>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <p class="noscript-msg">This app needs JavaScript to calculate your hours. Please enable it and reload.</p>
+  </noscript>
+
+  <script src="app.js"></script>
+</body>
+</html>

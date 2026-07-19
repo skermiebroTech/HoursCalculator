@@ -1,0 +1,43 @@
+# The site itself is just static files served as-is by GitHub Pages:
+#   index.html, style.css, app.js, manifest.json, service-worker.js, README.md
+# Everything below is local-only tooling or junk that the site doesn't need.
+
+# Local preview/dev config (used only to run a local server while editing)
+.claude/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.directory
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Node / tooling (in case a build or linter is added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.local
+*.log
+
+# OS / archive clutter
+*.tmp
+*.bak

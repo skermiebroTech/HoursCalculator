@@ -1,0 +1,479 @@
+/* ---------------------------------------------------------------------------
+   Weekly Hours — mobile-first styles with light & dark themes
+--------------------------------------------------------------------------- */
+
+:root {
+  --bg: #f2f5fa;
+  --card: #ffffff;
+  --inset: #eef1f7;
+  --text: #131a26;
+  --muted: #5d6678;
+  --border: #d5dbe6;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #e3ecfd;
+  --error: #c81e3c;
+  --error-soft: #fdecef;
+  --focus: #93b4f8;
+  --toast-bg: #1c2433;
+  --toast-text: #f2f5fa;
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.07);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0e1320;
+  --card: #1a2233;
+  --inset: #121a2a;
+  --text: #e9edf5;
+  --muted: #94a0b8;
+  --border: #2c3750;
+  --accent: #4f83f1;
+  --accent-strong: #6b96f4;
+  --accent-soft: #223357;
+  --error: #ff7b93;
+  --error-soft: #3a1f2b;
+  --focus: #3f66b0;
+  --toast-bg: #e9edf5;
+  --toast-text: #131a26;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 14px 14px calc(28px + env(safe-area-inset-bottom));
+}
+
+/* ------------------------------- header ---------------------------------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 2px 14px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+/* -------------------------------- cards ---------------------------------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ------------------------------- buttons ---------------------------------- */
+
+.btn {
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+
+.btn:active { transform: scale(0.98); }
+
+.btn-primary {
+  width: 100%;
+  min-height: 58px;
+  margin-top: 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .btn-primary { color: #0e1320; }
+
+.btn-primary:not(:disabled):hover { background: var(--accent-strong); }
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-danger { color: var(--error); }
+
+.icon-btn {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* ------------------------------ week picker ------------------------------- */
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.week-nav input[type="date"] {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--inset);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+}
+
+.week-label {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+/* -------------------------------- day rows -------------------------------- */
+
+.days-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.day-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 10px 14px 12px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow);
+}
+
+.day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.day-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-height: 44px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.day-toggle input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.day-name { font-weight: 700; font-size: 1.05rem; }
+
+.day-date {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.day-hours {
+  min-width: 58px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.day-hours.is-error {
+  color: var(--error);
+  background: var(--error-soft);
+}
+
+.day-hours.is-off {
+  color: var(--muted);
+  background: var(--inset);
+}
+
+.day-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 84px;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--inset);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+}
+
+/* On phone-width screens the native time picker opens on tap, so the inline
+   icon is redundant and crowds the field. */
+@media (max-width: 430px) {
+  input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+}
+
+/* ---------------------------- quick-pick chips ---------------------------- */
+
+.quick-picks {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.quick-label {
+  width: 44px;
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chips {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.chip {
+  min-height: 42px;
+  padding: 6px 4px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.05s ease;
+}
+
+.chip:active { transform: scale(0.96); }
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .chip.active { color: #0e1320; }
+
+.field input.invalid { border-color: var(--error); }
+
+.day-error {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--error);
+}
+
+.day-card.is-disabled { opacity: 0.6; }
+.day-card.is-disabled .day-fields,
+.day-card.is-disabled .quick-picks,
+.day-card.is-disabled .day-error { display: none; }
+
+/* -------------------------------- preview --------------------------------- */
+
+#preview {
+  margin: 0;
+  min-height: 96px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.98rem;
+  line-height: 1.65;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+#preview.is-empty {
+  font-family: inherit;
+  font-style: italic;
+  color: var(--muted);
+  white-space: normal;
+}
+
+.preview-note {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--error);
+}
+
+/* -------------------------------- actions --------------------------------- */
+
+.actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.actions-row .btn {
+  padding: 10px 6px;
+  font-size: 0.9rem;
+}
+
+/* -------------------------------- backup ---------------------------------- */
+
+.backup-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.backup-note {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* -------------------------------- footer ---------------------------------- */
+
+.app-footer {
+  padding: 10px 4px 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* --------------------------------- toast ---------------------------------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 10px);
+  max-width: calc(100vw - 32px);
+  padding: 13px 22px;
+  border-radius: 999px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 10;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* -------------------------------- helpers --------------------------------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.noscript-msg {
+  max-width: 560px;
+  margin: 24px auto;
+  padding: 0 16px;
+  text-align: center;
+}
+
+@media (min-width: 480px) {
+  .app { padding: 24px 20px calc(40px + env(safe-area-inset-bottom)); }
+  .app-header h1 { font-size: 1.65rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
