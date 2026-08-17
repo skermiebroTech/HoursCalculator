@@ -758,6 +758,7 @@
   var syncSetup = document.getElementById('syncSetup');
   var syncActive = document.getElementById('syncActive');
   var syncCodeShow = document.getElementById('syncCodeShow');
+  var syncQr = document.getElementById('syncQr');
   var syncNowBtn = document.getElementById('syncNowBtn');
   var stopSyncBtn = document.getElementById('stopSyncBtn');
   var syncStatus = document.getElementById('syncStatus');
@@ -781,6 +782,17 @@
       syncStatus.textContent = state.lastSyncAt
         ? 'Last synced ' + new Date(state.lastSyncAt).toLocaleString()
         : 'Not synced yet — tap “Sync now”.';
+      // QR code holding a link that opens this app and connects automatically
+      // (see the #sync= handler in init). Generated locally — the code never
+      // leaves the device.
+      if (typeof qrcode === 'function' && syncQr.dataset.code !== state.syncCode) {
+        var link = location.origin + location.pathname + '#sync=' + state.syncCode;
+        var qr = qrcode(0, 'M');
+        qr.addData(link);
+        qr.make();
+        syncQr.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+        syncQr.dataset.code = state.syncCode;
+      }
     }
   }
 
@@ -1592,6 +1604,21 @@
   buildRows();
   applyTheme();
   setWeek(state.selectedWeek || toISODate(mondayOf(new Date())));
+
+  // Arriving via a scanned QR code (#sync=CODE): adopt the code and connect.
+  var syncHash = location.hash.match(/^#sync=([A-Za-z0-9_-]{16,64})$/);
+  if (syncHash) {
+    history.replaceState(null, '', location.pathname + location.search);
+    if (state.syncCode !== syncHash[1] &&
+        (!state.syncCode ||
+          window.confirm('This link carries a different sync code. Replace the one on this device?'))) {
+      state.syncCode = syncHash[1];
+      state.lastSyncAt = null;
+      state.activeTab = 'backup'; // land where the sync status is visible
+      saveState();
+    }
+  }
+
   setTab(state.activeTab);
   if (state.syncCode) syncNow(); // pull other devices' changes on open
 

@@ -651,6 +651,21 @@ input:focus-visible {
   border-radius: 12px;
 }
 
+.sync-qr {
+  width: 220px;
+  max-width: 100%;
+  margin: 4px auto 10px;
+  padding: 14px;
+  background: #ffffff; /* QR needs dark-on-light contrast in both themes */
+  border-radius: 12px;
+}
+
+.sync-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .sync-code {
   display: block;
   width: 100%;

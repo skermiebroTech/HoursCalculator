@@ -100,7 +100,9 @@
             Cloudflare account — anyone with the code can read it, so keep it private.</p>
         </div>
         <div id="syncActive" hidden>
-          <p class="backup-note">Your sync code — tap to copy, then enter it on another device:</p>
+          <p class="backup-note">Scan this with your phone’s camera to connect it:</p>
+          <div id="syncQr" class="sync-qr" role="img" aria-label="QR code containing your sync link"></div>
+          <p class="backup-note">Or copy the sync code (tap it) and enter it on the other device:</p>
           <button type="button" id="syncCodeShow" class="sync-code"></button>
           <div class="backup-row">
             <button type="button" id="syncNowBtn" class="btn btn-accent">Sync now</button>
@@ -215,6 +217,7 @@
     <p class="noscript-msg">This app needs JavaScript to calculate your hours. Please enable it and reload.</p>
   </noscript>
 
+  <script src="qrcode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
