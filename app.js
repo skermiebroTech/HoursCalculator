@@ -1593,6 +1593,7 @@
   applyTheme();
   setWeek(state.selectedWeek || toISODate(mondayOf(new Date())));
   setTab(state.activeTab);
+  if (state.syncCode) syncNow(); // pull other devices' changes on open
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
