@@ -22,10 +22,17 @@
 <body>
   <div class="app">
     <header class="app-header">
-      <h1>Weekly Hours</h1>
+      <h1 id="appTitle">Weekly Hours</h1>
       <button type="button" id="themeToggle" class="btn icon-btn" aria-label="Switch colour theme">🌙</button>
     </header>
 
+    <nav class="tab-bar" role="tablist" aria-label="App sections">
+      <button type="button" id="tabHours" class="tab" role="tab" aria-selected="true" aria-controls="hoursView">Hours</button>
+      <button type="button" id="tabFuel" class="tab" role="tab" aria-selected="false" aria-controls="fuelView">Fuel</button>
+      <button type="button" id="tabBackup" class="tab" role="tab" aria-selected="false" aria-controls="backupView">Backup</button>
+    </nav>
+
+    <main id="hoursView" role="tabpanel" aria-labelledby="tabHours">
     <section class="card" aria-labelledby="weekHeading">
       <h2 id="weekHeading" class="visually-hidden">Week selection</h2>
       <div class="week-nav">
@@ -58,15 +65,112 @@
       </div>
     </section>
 
-    <section class="card" aria-labelledby="backupHeading">
-      <h2 id="backupHeading" class="section-title">Backup &amp; transfer</h2>
-      <div class="backup-row">
-        <button type="button" id="exportBtn" class="btn">Export backup</button>
-        <button type="button" id="importBtn" class="btn">Import backup</button>
-      </div>
-      <p class="backup-note">Save a file to move your hours to another device or keep a copy. Importing merges the file back in and replaces any weeks with matching dates.</p>
-      <input type="file" id="importInput" accept="application/json,.json" hidden>
-    </section>
+    </main>
+
+    <main id="backupView" role="tabpanel" aria-labelledby="tabBackup" hidden>
+      <section class="card" aria-labelledby="backupHeading">
+        <h2 id="backupHeading" class="section-title">Backup &amp; transfer</h2>
+        <div class="backup-row">
+          <button type="button" id="exportBtn" class="btn">Export backup</button>
+          <button type="button" id="importBtn" class="btn">Import backup</button>
+        </div>
+        <p class="backup-note">Save a file to move your hours and fuel data to another device or keep a copy. Importing merges the file back in and replaces any weeks or cars with matching dates or plates.</p>
+        <input type="file" id="importInput" accept="application/json,.json" hidden>
+      </section>
+    </main>
+
+    <main id="fuelView" role="tabpanel" aria-labelledby="tabFuel" hidden>
+      <section class="card" aria-labelledby="vehicleHeading">
+        <h2 id="vehicleHeading" class="section-title">Vehicle</h2>
+        <div class="car-row">
+          <label class="visually-hidden" for="carSelect">Select vehicle</label>
+          <select id="carSelect"></select>
+          <button type="button" id="addCarBtn" class="btn">＋ Car</button>
+        </div>
+        <form id="carForm" hidden>
+          <div class="car-form-fields">
+            <label class="field"><span>Number plate</span>
+              <input type="text" id="carPlate" autocomplete="off" autocapitalize="characters"
+                maxlength="10" placeholder="ABC123" required></label>
+            <label class="field"><span>State</span>
+              <select id="carState">
+                <option selected>QLD</option>
+                <option>NSW</option>
+                <option>VIC</option>
+                <option>SA</option>
+                <option>WA</option>
+                <option>TAS</option>
+                <option>NT</option>
+                <option>ACT</option>
+              </select></label>
+            <label class="field"><span>Car type / model</span>
+              <input type="text" id="carType" autocomplete="off"
+                placeholder="e.g. Toyota Corolla"></label>
+            <label class="field"><span>Tank size L</span>
+              <input type="number" id="carTank" inputmode="decimal" min="1" max="300" step="1"
+                autocomplete="off" placeholder="e.g. 50"></label>
+            <label class="field"><span>Economy L/100km</span>
+              <input type="number" id="carEconomy" inputmode="decimal" min="1" max="50" step="0.1"
+                autocomplete="off" placeholder="asked on first fill"></label>
+          </div>
+          <p class="backup-note">Tap “Find model” to fill in the car type from the number plate.
+            Each new plate uses one monthly lookup; repeat lookups are free.</p>
+          <div class="car-form-actions">
+            <button type="button" id="lookupPlateBtn" class="btn">Find model</button>
+            <button type="submit" class="btn btn-accent">Save car</button>
+            <button type="button" id="cancelCarBtn" class="btn">Cancel</button>
+          </div>
+        </form>
+        <p id="carInfo" class="car-info" hidden></p>
+        <div class="car-actions">
+          <button type="button" id="editCarBtn" class="btn btn-small" hidden>Edit car</button>
+          <button type="button" id="deleteCarBtn" class="btn btn-danger btn-small" hidden>Remove this car</button>
+        </div>
+      </section>
+
+      <section class="card" id="fillCard" aria-labelledby="fillHeading" hidden>
+        <h2 id="fillHeading" class="section-title">New fill-up</h2>
+        <form id="fillForm">
+          <div class="fill-fields">
+            <label class="field"><span>Date</span>
+              <input type="date" id="fillDate" required></label>
+            <label class="field"><span>Odometer km</span>
+              <input type="number" id="fillOdo" inputmode="decimal" min="0" step="1"
+                autocomplete="off" required></label>
+            <label class="field"><span>Litres</span>
+              <input type="number" id="fillLitres" inputmode="decimal" min="0.1" step="0.01"
+                autocomplete="off" required></label>
+            <label class="field"><span>Cost $</span>
+              <input type="number" id="fillCost" inputmode="decimal" min="0" step="0.01"
+                autocomplete="off" required></label>
+          </div>
+          <label class="field economy-field" id="economyField" hidden><span>Estimated fuel economy L/100km</span>
+            <input type="number" id="fillEconomy" inputmode="decimal" min="1" max="50" step="0.1"
+              autocomplete="off" placeholder="e.g. 7.5"></label>
+          <label class="fill-empty-toggle">
+            <input type="checkbox" id="fillFromEmpty">
+            <span>Tank was (near) empty before this fill</span>
+          </label>
+          <label class="fill-empty-toggle">
+            <input type="checkbox" id="fillToFull">
+            <span>Filled the tank up to full</span>
+          </label>
+          <button type="submit" id="fillSubmitBtn" class="btn btn-primary">Add fill-up</button>
+          <button type="button" id="cancelFillEditBtn" class="btn btn-cancel-edit" hidden>Cancel edit</button>
+        </form>
+      </section>
+
+      <section class="card" id="fuelStatsCard" aria-labelledby="fuelStatsHeading" hidden>
+        <h2 id="fuelStatsHeading" class="section-title">Stats</h2>
+        <div class="stat-grid" id="statGrid"></div>
+        <p id="statNote" class="backup-note" hidden></p>
+      </section>
+
+      <section class="card" id="fillHistoryCard" aria-labelledby="fillHistoryHeading" hidden>
+        <h2 id="fillHistoryHeading" class="section-title">Fill-up history</h2>
+        <ul id="fillList" class="fill-list"></ul>
+      </section>
+    </main>
 
     <footer class="app-footer">
       <p>Everything is saved on this device only — no account, no server.</p>

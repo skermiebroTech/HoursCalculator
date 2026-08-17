@@ -42,6 +42,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -147,6 +149,216 @@ button:focus-visible,
 input:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 1px;
+}
+
+/* -------------------------------- tab bar --------------------------------- */
+
+.tab-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 5px;
+  margin-bottom: 12px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.tab {
+  min-height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tab.active {
+  background: var(--card);
+  color: var(--accent-strong);
+  box-shadow: var(--shadow);
+}
+
+/* ------------------------------- fuel tab --------------------------------- */
+
+.car-row {
+  display: flex;
+  gap: 8px;
+}
+
+.car-row select {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--inset);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+}
+
+#carForm { margin-top: 12px; }
+
+.car-form-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Car type / model gets the full row; the other fields pair up. */
+.car-form-fields .field:nth-child(3) { grid-column: 1 / -1; }
+
+.field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--inset);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+}
+
+.car-form-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.car-form-actions .btn {
+  padding: 10px 6px;
+  font-size: 0.9rem;
+}
+
+.btn-accent {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.car-info {
+  margin: 12px 0 0;
+  font-weight: 600;
+}
+
+.car-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-small {
+  margin-top: 10px;
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.btn-cancel-edit {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.fill-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.economy-field {
+  display: block;
+  margin-top: 8px;
+}
+
+.fill-empty-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fill-empty-toggle input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat {
+  padding: 10px 12px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.stat strong {
+  display: block;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-strong);
+}
+
+.stat span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fill-item:last-child { border-bottom: none; }
+
+.fill-main strong {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.fill-main span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fill-delete,
+.fill-edit {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 1rem;
+  color: var(--muted);
 }
 
 /* ------------------------------ week picker ------------------------------- */

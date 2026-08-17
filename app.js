@@ -13,6 +13,8 @@
   var START_PRESETS = ['07:00', '07:30', '08:00', '08:30'];
   var FINISH_PRESETS = ['15:00', '15:30', '16:00', '16:30'];
 
+  var AU_STATES = ['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
+
   // ------------------------------------------------------------------- state
 
   function defaultDay(index) {
@@ -46,8 +48,70 @@
     return week;
   }
 
+  function sanitizeCar(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (typeof raw.plate !== 'string' || !raw.plate.trim()) return null;
+    var car = { plate: raw.plate.trim().toUpperCase(), type: '', state: 'QLD', economy: null, tank: null };
+    if (typeof raw.type === 'string') car.type = raw.type.trim();
+    if (AU_STATES.indexOf(raw.state) !== -1) car.state = raw.state;
+    if (typeof raw.economy === 'number' && isFinite(raw.economy) && raw.economy > 0) {
+      car.economy = raw.economy;
+    }
+    if (typeof raw.tank === 'number' && isFinite(raw.tank) && raw.tank > 0) {
+      car.tank = raw.tank;
+    }
+    return car;
+  }
+
+  function sanitizeFill(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (typeof raw.car !== 'string' || !raw.car) return null;
+    if (typeof raw.odo !== 'number' || !isFinite(raw.odo) || raw.odo < 0) return null;
+    if (typeof raw.litres !== 'number' || !isFinite(raw.litres) || raw.litres <= 0) return null;
+    return {
+      id: typeof raw.id === 'string' ? raw.id : String(Math.random()).slice(2),
+      car: raw.car.trim().toUpperCase(),
+      date: (typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date)) ? raw.date : '',
+      odo: raw.odo,
+      litres: raw.litres,
+      cost: (typeof raw.cost === 'number' && isFinite(raw.cost) && raw.cost >= 0) ? raw.cost : 0,
+      fromEmpty: raw.fromEmpty === true,
+      toFull: raw.toFull === true
+    };
+  }
+
+  function sanitizeFuel(raw) {
+    var fuel = { cars: [], fills: [], selectedCar: null, lookups: {} };
+    if (raw && typeof raw === 'object' && raw.lookups && typeof raw.lookups === 'object') {
+      Object.keys(raw.lookups).forEach(function (key) {
+        if (typeof raw.lookups[key] === 'string') fuel.lookups[key] = raw.lookups[key];
+      });
+    }
+    if (raw && typeof raw === 'object') {
+      if (Array.isArray(raw.cars)) {
+        raw.cars.forEach(function (c) {
+          var car = sanitizeCar(c);
+          if (car && !fuel.cars.some(function (x) { return x.plate === car.plate; })) {
+            fuel.cars.push(car);
+          }
+        });
+      }
+      if (Array.isArray(raw.fills)) {
+        raw.fills.forEach(function (f) {
+          var fill = sanitizeFill(f);
+          if (fill) fuel.fills.push(fill);
+        });
+      }
+      if (typeof raw.selectedCar === 'string') fuel.selectedCar = raw.selectedCar;
+    }
+    if (!fuel.cars.some(function (c) { return c.plate === fuel.selectedCar; })) {
+      fuel.selectedCar = fuel.cars.length ? fuel.cars[0].plate : null;
+    }
+    return fuel;
+  }
+
   function loadState() {
-    var state = { weeks: {}, selectedWeek: null, theme: null };
+    var state = { weeks: {}, selectedWeek: null, theme: null, activeTab: 'hours', fuel: sanitizeFuel(null) };
     try {
       var raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (raw && typeof raw === 'object') {
@@ -60,6 +124,8 @@
           state.selectedWeek = raw.selectedWeek;
         }
         if (raw.theme === 'light' || raw.theme === 'dark') state.theme = raw.theme;
+        if (raw.activeTab === 'fuel' || raw.activeTab === 'backup') state.activeTab = raw.activeTab;
+        state.fuel = sanitizeFuel(raw.fuel);
       }
     } catch (e) { /* corrupt or unavailable storage — start fresh */ }
     return state;
@@ -75,7 +141,13 @@
   }
 
   function saveState() {
-    var out = { weeks: savedWeeksObject(), selectedWeek: state.selectedWeek, theme: state.theme };
+    var out = {
+      weeks: savedWeeksObject(),
+      selectedWeek: state.selectedWeek,
+      theme: state.theme,
+      activeTab: state.activeTab,
+      fuel: state.fuel
+    };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
     } catch (e) { /* private mode / quota — app still works, just won't persist */ }
@@ -505,15 +577,16 @@
   function exportBackup() {
     var weeks = savedWeeksObject();
     var count = Object.keys(weeks).length;
-    if (!count) {
-      showToast('No hours saved yet to export');
+    if (!count && !state.fuel.cars.length && !state.fuel.fills.length) {
+      showToast('Nothing saved yet to export');
       return;
     }
     var payload = {
       app: 'weekly-hours',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      weeks: weeks
+      weeks: weeks,
+      fuel: { cars: state.fuel.cars, fills: state.fuel.fills }
     };
     var url = URL.createObjectURL(
       new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
@@ -546,17 +619,41 @@
         if (weekHasEntries(week)) incoming[key] = week;
       });
 
+      var incomingFuel = sanitizeFuel(raw.fuel);
+
       var keys = Object.keys(incoming).sort();
-      if (!keys.length) {
-        showToast('No hours found in that file');
+      if (!keys.length && !incomingFuel.cars.length && !incomingFuel.fills.length) {
+        showToast('No hours or fuel data found in that file');
         return;
       }
-      if (!window.confirm('Import ' + pluralWeeks(keys.length) +
-          ' from this backup? Weeks with the same dates will be replaced.')) return;
+      var parts = [];
+      if (keys.length) parts.push(pluralWeeks(keys.length) + ' of hours');
+      if (incomingFuel.cars.length) {
+        parts.push(incomingFuel.cars.length + (incomingFuel.cars.length === 1 ? ' car' : ' cars'));
+      }
+      if (incomingFuel.fills.length) parts.push(incomingFuel.fills.length + ' fill-ups');
+      if (!window.confirm('Import ' + parts.join(', ') +
+          ' from this backup? Matching weeks and cars will be replaced.')) return;
 
       keys.forEach(function (key) { state.weeks[key] = incoming[key]; });
-      setWeek(keys[keys.length - 1]); // jump to the latest imported week so it's visible
-      showToast('Imported ' + pluralWeeks(keys.length));
+
+      incomingFuel.cars.forEach(function (car) {
+        state.fuel.cars = state.fuel.cars.filter(function (c) { return c.plate !== car.plate; });
+        state.fuel.cars.push(car);
+      });
+      incomingFuel.fills.forEach(function (fill) {
+        var dupe = state.fuel.fills.some(function (f) {
+          return f.car === fill.car && f.odo === fill.odo && f.litres === fill.litres;
+        });
+        if (!dupe) state.fuel.fills.push(fill);
+      });
+      if (!state.fuel.selectedCar && state.fuel.cars.length) {
+        state.fuel.selectedCar = state.fuel.cars[0].plate;
+      }
+
+      if (keys.length) setWeek(keys[keys.length - 1]); // jump to the latest imported week
+      else renderFuel();
+      showToast('Imported backup');
     };
     reader.onerror = function () { showToast('Couldn’t read that file'); };
     reader.readAsText(file);
@@ -597,11 +694,596 @@
     });
   }
 
+  // -------------------------------------------------------------------- tabs
+
+  var appTitle = document.getElementById('appTitle');
+
+  var TABS = {
+    hours: {
+      btn: document.getElementById('tabHours'),
+      view: document.getElementById('hoursView'),
+      title: 'Weekly Hours'
+    },
+    fuel: {
+      btn: document.getElementById('tabFuel'),
+      view: document.getElementById('fuelView'),
+      title: 'Fuel Tracker'
+    },
+    backup: {
+      btn: document.getElementById('tabBackup'),
+      view: document.getElementById('backupView'),
+      title: 'Backup'
+    }
+  };
+
+  function setTab(tab) {
+    if (!TABS[tab]) tab = 'hours';
+    state.activeTab = tab;
+    Object.keys(TABS).forEach(function (key) {
+      var active = key === tab;
+      TABS[key].view.hidden = !active;
+      TABS[key].btn.classList.toggle('active', active);
+      TABS[key].btn.setAttribute('aria-selected', String(active));
+    });
+    appTitle.textContent = TABS[tab].title;
+    if (tab === 'fuel') renderFuel();
+    saveState();
+  }
+
+  Object.keys(TABS).forEach(function (key) {
+    TABS[key].btn.addEventListener('click', function () { setTab(key); });
+  });
+
+  // -------------------------------------------------------------------- fuel
+
+  var carSelect = document.getElementById('carSelect');
+  var addCarBtn = document.getElementById('addCarBtn');
+  var carForm = document.getElementById('carForm');
+  // Plate lookups go through a Cloudflare Worker (see worker/) so the
+  // plateapi.com.au API key never ships in this file. Set this to your
+  // deployed worker URL, e.g. 'https://plate-lookup.<subdomain>.workers.dev'.
+  var LOOKUP_WORKER_URL = '';
+
+  var carPlateInput = document.getElementById('carPlate');
+  var carTypeInput = document.getElementById('carType');
+  var carStateSelect = document.getElementById('carState');
+  var carTankInput = document.getElementById('carTank');
+  var carEconomyInput = document.getElementById('carEconomy');
+  var editCarBtn = document.getElementById('editCarBtn');
+  var lookupPlateBtn = document.getElementById('lookupPlateBtn');
+  var cancelCarBtn = document.getElementById('cancelCarBtn');
+  var carInfo = document.getElementById('carInfo');
+  var deleteCarBtn = document.getElementById('deleteCarBtn');
+  var fillCard = document.getElementById('fillCard');
+  var fillForm = document.getElementById('fillForm');
+  var fillDate = document.getElementById('fillDate');
+  var fillOdo = document.getElementById('fillOdo');
+  var fillLitres = document.getElementById('fillLitres');
+  var fillCost = document.getElementById('fillCost');
+  var economyField = document.getElementById('economyField');
+  var fillEconomy = document.getElementById('fillEconomy');
+  var fillFromEmpty = document.getElementById('fillFromEmpty');
+  var fillToFull = document.getElementById('fillToFull');
+  var fillSubmitBtn = document.getElementById('fillSubmitBtn');
+  var cancelFillEditBtn = document.getElementById('cancelFillEditBtn');
+  var fuelStatsCard = document.getElementById('fuelStatsCard');
+  var statGrid = document.getElementById('statGrid');
+  var statNote = document.getElementById('statNote');
+  var fillHistoryCard = document.getElementById('fillHistoryCard');
+  var fillList = document.getElementById('fillList');
+
+  var editingCarPlate = null; // plate of the car being edited, null when adding
+  var editingFillId = null;   // id of the fill being edited, null when adding
+
+  function selectedCar() {
+    var plate = state.fuel.selectedCar;
+    for (var i = 0; i < state.fuel.cars.length; i++) {
+      if (state.fuel.cars[i].plate === plate) return state.fuel.cars[i];
+    }
+    return null;
+  }
+
+  // Fills for one car, oldest first by odometer reading.
+  function carFills(plate) {
+    return state.fuel.fills
+      .filter(function (f) { return f.car === plate; })
+      .sort(function (a, b) { return a.odo - b.odo; });
+  }
+
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  /*
+   * Work out economy and range for a car.
+   *
+   * Real-world economy is measured between two "filled to full" fills (the
+   * standard trip method: everything added after full fill A up to and
+   * including full fill B was burned over that distance), or failing that
+   * between two "tank was empty" fills. With neither, we fall back to the
+   * user's estimated L/100km.
+   *
+   * Estimated range = fuel believed to be in the tank right now divided by
+   * economy. After a "filled to full" fill with a known tank size that's a
+   * full tank; otherwise it's litres added since the last empty fill minus
+   * what the distance driven since then should have used.
+   */
+  function fuelStats(car) {
+    var fills = carFills(car.plate);
+    var stats = {
+      fills: fills,
+      totalCost: 0,
+      totalLitres: 0,
+      measuredEconomy: null,
+      measuredKm: 0,
+      economy: car.economy,
+      range: null,
+      rangeApprox: false,
+      fullRange: null
+    };
+    fills.forEach(function (f) {
+      stats.totalCost += f.cost;
+      stats.totalLitres += f.litres;
+    });
+
+    var emptyIdx = [];
+    var fullIdx = [];
+    fills.forEach(function (f, i) {
+      if (f.fromEmpty) emptyIdx.push(i);
+      if (f.toFull) fullIdx.push(i);
+    });
+
+    // Sum litres burned over the distance covered by a list of marker fills.
+    // Full-to-full intervals burn the fuel added after A up to and including
+    // B; empty-to-empty intervals burn the fuel added from A up to but not
+    // including B.
+    function measureIntervals(idx, includeEnd) {
+      var out = { litres: 0, km: 0 };
+      for (var p = 1; p < idx.length; p++) {
+        var a = idx[p - 1];
+        var b = idx[p];
+        var dist = fills[b].odo - fills[a].odo;
+        if (dist <= 0) continue;
+        for (var j = a; j < b; j++) {
+          out.litres += fills[includeEnd ? j + 1 : j].litres;
+        }
+        out.km += dist;
+      }
+      return out;
+    }
+
+    var measured = measureIntervals(fullIdx, true);
+    stats.method = 'full';
+    if (!measured.km) {
+      measured = measureIntervals(emptyIdx, false);
+      stats.method = 'empty';
+    }
+    if (measured.km > 0) {
+      stats.measuredEconomy = measured.litres / measured.km * 100;
+      stats.measuredKm = measured.km;
+      stats.economy = stats.measuredEconomy;
+    } else {
+      stats.method = null;
+    }
+
+    if (fills.length && stats.economy > 0) {
+      var last = fills[fills.length - 1];
+      var inTank;
+      if (last.toFull && car.tank) {
+        inTank = car.tank;
+      } else if (emptyIdx.length) {
+        var lastEmpty = emptyIdx[emptyIdx.length - 1];
+        inTank = 0;
+        for (var k = lastEmpty; k < fills.length; k++) inTank += fills[k].litres;
+        inTank -= (last.odo - fills[lastEmpty].odo) / 100 * stats.economy;
+      } else {
+        // Never filled from empty: we only know about the last top-up.
+        inTank = last.litres;
+        stats.rangeApprox = true;
+      }
+      if (car.tank) inTank = Math.min(inTank, car.tank);
+      stats.range = Math.max(0, inTank) / stats.economy * 100;
+    }
+    if (car.tank && stats.economy > 0) {
+      stats.fullRange = car.tank / stats.economy * 100;
+    }
+    return stats;
+  }
+
+  function renderCarSelect() {
+    carSelect.innerHTML = '';
+    if (!state.fuel.cars.length) {
+      var opt = document.createElement('option');
+      opt.textContent = 'No cars yet — add one';
+      opt.value = '';
+      carSelect.appendChild(opt);
+      carSelect.disabled = true;
+      return;
+    }
+    carSelect.disabled = false;
+    state.fuel.cars.forEach(function (car) {
+      var opt = document.createElement('option');
+      opt.value = car.plate;
+      opt.textContent = car.plate + (car.type ? ' — ' + car.type : '');
+      carSelect.appendChild(opt);
+    });
+    carSelect.value = state.fuel.selectedCar;
+  }
+
+  function addStat(label, value) {
+    var div = document.createElement('div');
+    div.className = 'stat';
+    var v = document.createElement('strong');
+    v.textContent = value;
+    var l = document.createElement('span');
+    l.textContent = label;
+    div.appendChild(v);
+    div.appendChild(l);
+    statGrid.appendChild(div);
+  }
+
+  function renderFuel() {
+    renderCarSelect();
+    var car = selectedCar();
+    var addingCar = !carForm.hidden;
+
+    carInfo.hidden = !car || addingCar;
+    deleteCarBtn.hidden = !car || addingCar;
+    editCarBtn.hidden = !car || addingCar;
+    fillCard.hidden = !car || addingCar;
+    if (!car) {
+      fuelStatsCard.hidden = true;
+      fillHistoryCard.hidden = true;
+      saveState();
+      return;
+    }
+
+    var stats = fuelStats(car);
+    carInfo.textContent = car.plate + (car.type ? ' · ' + car.type : '') +
+      (car.economy ? ' · est. ' + round1(car.economy) + ' L/100km' : '') +
+      (car.tank ? ' · ' + round1(car.tank) + ' L tank' : '');
+
+    // First fill on this vehicle asks for an estimated economy figure.
+    economyField.hidden = car.economy !== null;
+    fillEconomy.required = !economyField.hidden;
+    if (!fillDate.value) fillDate.value = toISODate(new Date());
+
+    fuelStatsCard.hidden = !stats.fills.length;
+    fillHistoryCard.hidden = !stats.fills.length;
+    if (stats.fills.length) {
+      statGrid.innerHTML = '';
+      if (stats.range !== null) {
+        addStat('est. range' + (stats.rangeApprox ? ' *' : ''), Math.round(stats.range) + ' km');
+      }
+      if (stats.economy) {
+        addStat(stats.measuredEconomy ? 'measured economy' : 'estimated economy',
+          round1(stats.economy) + ' L/100km');
+      }
+      if (stats.fullRange) {
+        addStat('full-tank range', Math.round(stats.fullRange) + ' km');
+      }
+      addStat('total spent', '$' + stats.totalCost.toFixed(2));
+      addStat('total fuel', round1(stats.totalLitres) + ' L');
+      if (stats.totalLitres > 0) {
+        addStat('avg price', '$' + (stats.totalCost / stats.totalLitres).toFixed(2) + '/L');
+      }
+      if (stats.economy && stats.totalLitres > 0) {
+        addStat('cost per 100km',
+          '$' + (stats.totalCost / stats.totalLitres * stats.economy).toFixed(2));
+      }
+
+      if (stats.measuredEconomy) {
+        statNote.hidden = false;
+        statNote.textContent = 'Economy measured over ' + Math.round(stats.measuredKm) +
+          ' km of ' + (stats.method === 'full' ? 'full-to-full' : 'empty-to-empty') + ' fills.';
+      } else if (stats.rangeApprox) {
+        statNote.hidden = false;
+        statNote.textContent = '* Based on the last fill only — tick “filled up to full” or ' +
+          '“tank was empty” on your fill-ups to get accurate range and measured economy.';
+      } else {
+        statNote.hidden = true;
+      }
+
+      fillList.innerHTML = '';
+      stats.fills.slice().reverse().forEach(function (f) {
+        var li = document.createElement('li');
+        li.className = 'fill-item';
+        var main = document.createElement('div');
+        main.className = 'fill-main';
+        var top = document.createElement('strong');
+        top.textContent = round1(f.litres) + ' L · $' + f.cost.toFixed(2) +
+          (f.fromEmpty ? ' · from empty' : '') + (f.toFull ? ' · to full' : '');
+        var sub = document.createElement('span');
+        sub.textContent = (f.date ? formatFillDate(f.date) + ' · ' : '') +
+          Math.round(f.odo).toLocaleString() + ' km';
+        main.appendChild(top);
+        main.appendChild(sub);
+        var edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'btn icon-btn fill-edit';
+        edit.textContent = '✎';
+        edit.setAttribute('aria-label', 'Edit fill-up on ' + (f.date || 'unknown date'));
+        edit.addEventListener('click', function () { startFillEdit(f); });
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn icon-btn fill-delete';
+        del.textContent = '✕';
+        del.setAttribute('aria-label', 'Delete fill-up on ' + (f.date || 'unknown date'));
+        del.addEventListener('click', function () {
+          if (!window.confirm('Delete this fill-up?')) return;
+          state.fuel.fills = state.fuel.fills.filter(function (x) { return x.id !== f.id; });
+          if (editingFillId === f.id) resetFillForm();
+          renderFuel();
+          showToast('Fill-up deleted');
+        });
+        li.appendChild(main);
+        li.appendChild(edit);
+        li.appendChild(del);
+        fillList.appendChild(li);
+      });
+    }
+    saveState();
+  }
+
+  function formatFillDate(iso) {
+    return parseISODate(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function resetFillForm() {
+    editingFillId = null;
+    fillForm.reset();
+    fillDate.value = toISODate(new Date());
+    fillSubmitBtn.textContent = 'Add fill-up';
+    cancelFillEditBtn.hidden = true;
+  }
+
+  function startFillEdit(fill) {
+    editingFillId = fill.id;
+    fillDate.value = fill.date || toISODate(new Date());
+    fillOdo.value = String(fill.odo);
+    fillLitres.value = String(fill.litres);
+    fillCost.value = String(fill.cost);
+    fillFromEmpty.checked = fill.fromEmpty;
+    fillToFull.checked = fill.toFull;
+    fillSubmitBtn.textContent = 'Save changes';
+    cancelFillEditBtn.hidden = false;
+    fillCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    fillOdo.focus();
+  }
+
+  cancelFillEditBtn.addEventListener('click', function () {
+    resetFillForm();
+    showToast('Edit cancelled');
+  });
+
+  carSelect.addEventListener('change', function () {
+    state.fuel.selectedCar = carSelect.value;
+    resetFillForm();
+    renderFuel();
+  });
+
+  addCarBtn.addEventListener('click', function () {
+    editingCarPlate = null;
+    carForm.hidden = false;
+    carPlateInput.value = '';
+    carTypeInput.value = '';
+    carStateSelect.value = 'QLD';
+    carTankInput.value = '';
+    carEconomyInput.value = '';
+    renderFuel();
+    carPlateInput.focus();
+  });
+
+  editCarBtn.addEventListener('click', function () {
+    var car = selectedCar();
+    if (!car) return;
+    editingCarPlate = car.plate;
+    carForm.hidden = false;
+    carPlateInput.value = car.plate;
+    carTypeInput.value = car.type;
+    carStateSelect.value = car.state || 'QLD';
+    carTankInput.value = car.tank === null ? '' : String(car.tank);
+    carEconomyInput.value = car.economy === null ? '' : String(car.economy);
+    renderFuel();
+    carPlateInput.focus();
+  });
+
+  cancelCarBtn.addEventListener('click', function () {
+    editingCarPlate = null;
+    carForm.hidden = true;
+    renderFuel();
+  });
+
+  function titleCase(s) {
+    return s.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+  }
+
+  function describeVehicle(v) {
+    var parts = [];
+    if (v.make) parts.push(titleCase(v.make));
+    if (v.model) parts.push(String(v.model).toUpperCase());
+    if (v.engine) parts.push(v.engine);
+    if (v.year_range) parts.push(v.year_range);
+    return parts.join(' ');
+  }
+
+  // Look the plate up via the Cloudflare Worker proxy (worker/), which holds
+  // the plateapi.com.au key. Results are cached per plate+state in saved
+  // state, so repeat lookups never touch the monthly quota.
+  lookupPlateBtn.addEventListener('click', function () {
+    var plate = carPlateInput.value.trim().toUpperCase();
+    var carState = carStateSelect.value;
+    if (!plate) {
+      showToast('Type the number plate first');
+      carPlateInput.focus();
+      return;
+    }
+    var cacheKey = carState + ':' + plate;
+    if (state.fuel.lookups[cacheKey]) {
+      carTypeInput.value = state.fuel.lookups[cacheKey];
+      showToast('Found (cached): ' + state.fuel.lookups[cacheKey]);
+      return;
+    }
+    if (!LOOKUP_WORKER_URL) {
+      showToast('Plate lookup isn’t set up yet — deploy the worker first');
+      return;
+    }
+    lookupPlateBtn.disabled = true;
+    lookupPlateBtn.textContent = 'Finding…';
+    fetch(LOOKUP_WORKER_URL + '?plate=' + encodeURIComponent(plate) +
+        '&state=' + encodeURIComponent(carState))
+      .then(function (res) {
+        var remaining = res.headers.get('X-RateLimit-Remaining');
+        return res.json().then(function (data) {
+          if (!data.success || !data.vehicle) {
+            showToast('No match for ' + plate + ' (' + carState + ') — enter the model manually');
+            return;
+          }
+          var desc = describeVehicle(data.vehicle);
+          carTypeInput.value = desc;
+          state.fuel.lookups[cacheKey] = desc;
+          saveState();
+          showToast('Found: ' + desc +
+            (remaining !== null ? ' · ' + remaining + ' lookups left' : ''));
+        });
+      })
+      .catch(function () {
+        showToast('Lookup failed — check your connection or enter the model manually');
+      })
+      .then(function () {
+        lookupPlateBtn.disabled = false;
+        lookupPlateBtn.textContent = 'Find model';
+      });
+  });
+
+  carForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var plate = carPlateInput.value.trim().toUpperCase();
+    if (!plate) return;
+
+    var tank = carTankInput.value === '' ? null : Number(carTankInput.value);
+    if (tank !== null && (!isFinite(tank) || tank <= 0)) tank = null;
+    var economy = carEconomyInput.value === '' ? null : Number(carEconomyInput.value);
+    if (economy !== null && (!isFinite(economy) || economy <= 0)) economy = null;
+
+    var taken = state.fuel.cars.some(function (c) {
+      return c.plate === plate && c.plate !== editingCarPlate;
+    });
+    if (taken) {
+      showToast(plate + ' is already saved');
+      return;
+    }
+
+    if (editingCarPlate) {
+      var car = null;
+      for (var i = 0; i < state.fuel.cars.length; i++) {
+        if (state.fuel.cars[i].plate === editingCarPlate) car = state.fuel.cars[i];
+      }
+      if (!car) return;
+      car.type = carTypeInput.value.trim();
+      car.state = carStateSelect.value;
+      car.tank = tank;
+      car.economy = economy;
+      if (plate !== car.plate) {
+        state.fuel.fills.forEach(function (f) {
+          if (f.car === car.plate) f.car = plate;
+        });
+        car.plate = plate;
+      }
+      state.fuel.selectedCar = plate;
+      showToast('Updated ' + plate);
+    } else {
+      state.fuel.cars.push({
+        plate: plate, type: carTypeInput.value.trim(), state: carStateSelect.value,
+        economy: economy, tank: tank
+      });
+      state.fuel.selectedCar = plate;
+      showToast('Added ' + plate);
+    }
+    editingCarPlate = null;
+    carForm.hidden = true;
+    resetFillForm();
+    renderFuel();
+  });
+
+  deleteCarBtn.addEventListener('click', function () {
+    var car = selectedCar();
+    if (!car) return;
+    var count = carFills(car.plate).length;
+    if (!window.confirm('Remove ' + car.plate +
+        (count ? ' and its ' + count + ' fill-up' + (count === 1 ? '' : 's') : '') + '?')) return;
+    state.fuel.cars = state.fuel.cars.filter(function (c) { return c.plate !== car.plate; });
+    state.fuel.fills = state.fuel.fills.filter(function (f) { return f.car !== car.plate; });
+    state.fuel.selectedCar = state.fuel.cars.length ? state.fuel.cars[0].plate : null;
+    resetFillForm();
+    renderFuel();
+    showToast('Removed ' + car.plate);
+  });
+
+  fillForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var car = selectedCar();
+    if (!car) return;
+
+    var odo = Number(fillOdo.value);
+    var litres = Number(fillLitres.value);
+    var cost = Number(fillCost.value);
+    if (!isFinite(odo) || odo < 0 || !isFinite(litres) || litres <= 0 ||
+        !isFinite(cost) || cost < 0) {
+      showToast('Check the odometer, litres and cost values');
+      return;
+    }
+
+    var fills = carFills(car.plate).filter(function (f) { return f.id !== editingFillId; });
+    var last = fills[fills.length - 1];
+    if (!editingFillId && last && odo <= last.odo &&
+        !window.confirm('Odometer (' + odo + ' km) isn’t higher than the last fill (' +
+          last.odo + ' km). Add anyway?')) {
+      return;
+    }
+
+    if (car.economy === null) {
+      var economy = Number(fillEconomy.value);
+      if (!isFinite(economy) || economy <= 0) {
+        showToast('Enter an estimated fuel economy for ' + car.plate);
+        fillEconomy.focus();
+        return;
+      }
+      car.economy = economy;
+    }
+
+    if (editingFillId) {
+      state.fuel.fills.forEach(function (f) {
+        if (f.id !== editingFillId) return;
+        f.date = fillDate.value || f.date;
+        f.odo = odo;
+        f.litres = litres;
+        f.cost = cost;
+        f.fromEmpty = fillFromEmpty.checked;
+        f.toFull = fillToFull.checked;
+      });
+      showToast('Fill-up updated');
+    } else {
+      state.fuel.fills.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        car: car.plate,
+        date: fillDate.value || toISODate(new Date()),
+        odo: odo,
+        litres: litres,
+        cost: cost,
+        fromEmpty: fillFromEmpty.checked,
+        toFull: fillToFull.checked
+      });
+      showToast('Fill-up saved');
+    }
+    resetFillForm();
+    renderFuel();
+  });
+
   // -------------------------------------------------------------------- init
 
   buildRows();
   applyTheme();
   setWeek(state.selectedWeek || toISODate(mondayOf(new Date())));
+  setTab(state.activeTab);
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
