@@ -81,6 +81,34 @@
         <p class="backup-note">Save a file to move your data to another device or keep a copy — everything at once, or just the hours or just the fuel. Importing accepts any of those files, merges it back in, and replaces any weeks or cars with matching dates or plates.</p>
         <input type="file" id="importInput" accept="application/json,.json" hidden>
       </section>
+
+      <section class="card" aria-labelledby="syncHeading">
+        <h2 id="syncHeading" class="section-title">Sync between devices</h2>
+        <div id="syncSetup">
+          <div class="backup-row">
+            <button type="button" id="createSyncBtn" class="btn">Create sync code</button>
+            <button type="button" id="enterSyncBtn" class="btn">Enter a code</button>
+          </div>
+          <form id="syncCodeForm" class="sync-code-row" hidden>
+            <label class="visually-hidden" for="syncCodeInput">Sync code</label>
+            <input type="text" id="syncCodeInput" autocomplete="off" spellcheck="false"
+              placeholder="paste your sync code" minlength="16" maxlength="64" required>
+            <button type="submit" class="btn">Connect</button>
+          </form>
+          <p class="backup-note">Create a code on one device, enter it on another, and both keep
+            the same hours and fuel data. Your data is stored under that code in your own
+            Cloudflare account — anyone with the code can read it, so keep it private.</p>
+        </div>
+        <div id="syncActive" hidden>
+          <p class="backup-note">Your sync code — tap to copy, then enter it on another device:</p>
+          <button type="button" id="syncCodeShow" class="sync-code"></button>
+          <div class="backup-row">
+            <button type="button" id="syncNowBtn" class="btn btn-accent">Sync now</button>
+            <button type="button" id="stopSyncBtn" class="btn btn-danger">Stop syncing</button>
+          </div>
+          <p id="syncStatus" class="backup-note"></p>
+        </div>
+      </section>
     </main>
 
     <main id="fuelView" role="tabpanel" aria-labelledby="tabFuel" hidden>
@@ -177,7 +205,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>Everything is saved on this device only — no account, no server.</p>
+      <p>Saved on this device — sync between devices is optional, from the Backup tab.</p>
     </footer>
   </div>
 

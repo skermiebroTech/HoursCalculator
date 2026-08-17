@@ -25,7 +25,7 @@
     return { days: DAY_NAMES.map(function (_, i) { return defaultDay(i); }) };
   }
 
-  var DEFAULT_WEEK_JSON = JSON.stringify(defaultWeek());
+  var DEFAULT_WEEK_JSON = JSON.stringify(defaultWeek().days);
 
   function sanitizeDay(raw, index) {
     var day = defaultDay(index);
@@ -42,8 +42,12 @@
 
   function sanitizeWeek(raw) {
     var week = defaultWeek();
-    if (raw && typeof raw === 'object' && Array.isArray(raw.days)) {
-      week.days = week.days.map(function (fallback, i) { return sanitizeDay(raw.days[i], i); });
+    if (raw && typeof raw === 'object') {
+      if (Array.isArray(raw.days)) {
+        week.days = week.days.map(function (fallback, i) { return sanitizeDay(raw.days[i], i); });
+      }
+      // "mod" is a last-modified timestamp used by sync to pick the newer copy.
+      if (typeof raw.mod === 'number' && isFinite(raw.mod)) week.mod = raw.mod;
     }
     return week;
   }
@@ -60,6 +64,7 @@
     if (typeof raw.tank === 'number' && isFinite(raw.tank) && raw.tank > 0) {
       car.tank = raw.tank;
     }
+    if (typeof raw.mod === 'number' && isFinite(raw.mod)) car.mod = raw.mod;
     return car;
   }
 
@@ -68,7 +73,9 @@
     if (typeof raw.car !== 'string' || !raw.car) return null;
     if (typeof raw.odo !== 'number' || !isFinite(raw.odo) || raw.odo < 0) return null;
     if (typeof raw.litres !== 'number' || !isFinite(raw.litres) || raw.litres <= 0) return null;
+    var mod = (typeof raw.mod === 'number' && isFinite(raw.mod)) ? raw.mod : undefined;
     return {
+      mod: mod,
       id: typeof raw.id === 'string' ? raw.id : String(Math.random()).slice(2),
       car: raw.car.trim().toUpperCase(),
       date: (typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date)) ? raw.date : '',
@@ -110,8 +117,31 @@
     return fuel;
   }
 
+  // Tombstones: timestamps of deletions, so sync removes entities on other
+  // devices instead of resurrecting them. An entity edited after its
+  // tombstone (mod > timestamp) survives.
+  function sanitizeDeleted(raw) {
+    var out = { weeks: {}, cars: {}, fills: {} };
+    if (raw && typeof raw === 'object') {
+      Object.keys(out).forEach(function (kind) {
+        if (raw[kind] && typeof raw[kind] === 'object') {
+          Object.keys(raw[kind]).forEach(function (key) {
+            if (typeof raw[kind][key] === 'number' && isFinite(raw[kind][key])) {
+              out[kind][key] = raw[kind][key];
+            }
+          });
+        }
+      });
+    }
+    return out;
+  }
+
   function loadState() {
-    var state = { weeks: {}, selectedWeek: null, theme: null, activeTab: 'hours', fuel: sanitizeFuel(null) };
+    var state = {
+      weeks: {}, selectedWeek: null, theme: null, activeTab: 'hours',
+      fuel: sanitizeFuel(null), syncCode: null, lastSyncAt: null,
+      deleted: sanitizeDeleted(null)
+    };
     try {
       var raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (raw && typeof raw === 'object') {
@@ -126,6 +156,13 @@
         if (raw.theme === 'light' || raw.theme === 'dark') state.theme = raw.theme;
         if (raw.activeTab === 'fuel' || raw.activeTab === 'backup') state.activeTab = raw.activeTab;
         state.fuel = sanitizeFuel(raw.fuel);
+        if (typeof raw.syncCode === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(raw.syncCode)) {
+          state.syncCode = raw.syncCode;
+        }
+        if (typeof raw.lastSyncAt === 'number' && isFinite(raw.lastSyncAt)) {
+          state.lastSyncAt = raw.lastSyncAt;
+        }
+        state.deleted = sanitizeDeleted(raw.deleted);
       }
     } catch (e) { /* corrupt or unavailable storage — start fresh */ }
     return state;
@@ -135,18 +172,37 @@
   function savedWeeksObject() {
     var weeks = {};
     Object.keys(state.weeks).forEach(function (key) {
-      if (JSON.stringify(state.weeks[key]) !== DEFAULT_WEEK_JSON) weeks[key] = state.weeks[key];
+      if (JSON.stringify(state.weeks[key].days) !== DEFAULT_WEEK_JSON) weeks[key] = state.weeks[key];
     });
     return weeks;
   }
 
+  // Stamp a week's "mod" whenever its day data changes between saves, so sync
+  // can tell which device edited it most recently.
+  var lastSavedDays = {};
+
+  function stampChangedWeeks() {
+    Object.keys(state.weeks).forEach(function (key) {
+      var daysJson = JSON.stringify(state.weeks[key].days);
+      var prev = lastSavedDays[key];
+      if (prev === undefined ? daysJson !== DEFAULT_WEEK_JSON : prev !== daysJson) {
+        state.weeks[key].mod = Date.now();
+      }
+      lastSavedDays[key] = daysJson;
+    });
+  }
+
   function saveState() {
+    stampChangedWeeks();
     var out = {
       weeks: savedWeeksObject(),
       selectedWeek: state.selectedWeek,
       theme: state.theme,
       activeTab: state.activeTab,
-      fuel: state.fuel
+      fuel: state.fuel,
+      syncCode: state.syncCode,
+      lastSyncAt: state.lastSyncAt,
+      deleted: state.deleted
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
@@ -154,6 +210,9 @@
   }
 
   var state = loadState();
+  Object.keys(state.weeks).forEach(function (key) {
+    lastSavedDays[key] = JSON.stringify(state.weeks[key].days);
+  });
 
   // -------------------------------------------------------------- date utils
 
@@ -546,6 +605,7 @@
     if (weekHasEntries(currentWeek()) &&
         !window.confirm('Clear all times for this week?')) return;
     state.weeks[state.selectedWeek] = defaultWeek();
+    state.deleted.weeks[state.selectedWeek] = Date.now();
     fillRowsFromState();
     refresh();
     showToast('Week cleared');
@@ -689,6 +749,215 @@
     importInput.value = ''; // let the same file be chosen again later
   });
 
+  // -------------------------------------------------------------------- sync
+
+  var createSyncBtn = document.getElementById('createSyncBtn');
+  var enterSyncBtn = document.getElementById('enterSyncBtn');
+  var syncCodeForm = document.getElementById('syncCodeForm');
+  var syncCodeInput = document.getElementById('syncCodeInput');
+  var syncSetup = document.getElementById('syncSetup');
+  var syncActive = document.getElementById('syncActive');
+  var syncCodeShow = document.getElementById('syncCodeShow');
+  var syncNowBtn = document.getElementById('syncNowBtn');
+  var stopSyncBtn = document.getElementById('stopSyncBtn');
+  var syncStatus = document.getElementById('syncStatus');
+
+  var SYNC_CODE_RE = /^[A-Za-z0-9_-]{16,64}$/;
+
+  function generateSyncCode() {
+    var alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+    var bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    var code = '';
+    for (var i = 0; i < bytes.length; i++) code += alphabet[bytes[i] % 64];
+    return code;
+  }
+
+  function renderSync() {
+    syncSetup.hidden = !!state.syncCode;
+    syncActive.hidden = !state.syncCode;
+    if (state.syncCode) {
+      syncCodeShow.textContent = state.syncCode;
+      syncStatus.textContent = state.lastSyncAt
+        ? 'Last synced ' + new Date(state.lastSyncAt).toLocaleString()
+        : 'Not synced yet — tap “Sync now”.';
+    }
+  }
+
+  function syncPayload() {
+    return {
+      app: 'weekly-hours',
+      version: 3,
+      syncedAt: new Date().toISOString(),
+      weeks: savedWeeksObject(),
+      fuel: { cars: state.fuel.cars, fills: state.fuel.fills, lookups: state.fuel.lookups },
+      deleted: state.deleted
+    };
+  }
+
+  // Merge a remote sync payload into local state. Per entity (week, car,
+  // fill) the copy with the newer "mod" timestamp wins; tombstones delete
+  // entities unless they were edited after the deletion.
+  function mergeRemote(raw) {
+    if (!raw || typeof raw !== 'object') return;
+
+    var remoteDeleted = sanitizeDeleted(raw.deleted);
+    Object.keys(remoteDeleted).forEach(function (kind) {
+      Object.keys(remoteDeleted[kind]).forEach(function (key) {
+        if (!state.deleted[kind][key] || remoteDeleted[kind][key] > state.deleted[kind][key]) {
+          state.deleted[kind][key] = remoteDeleted[kind][key];
+        }
+      });
+    });
+
+    if (raw.weeks && typeof raw.weeks === 'object') {
+      Object.keys(raw.weeks).forEach(function (key) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+        var remote = sanitizeWeek(raw.weeks[key]);
+        if ((remote.mod || 0) <= (state.deleted.weeks[key] || 0)) return;
+        var local = state.weeks[key];
+        if (!local || (remote.mod || 0) > (local.mod || 0)) {
+          state.weeks[key] = remote;
+          lastSavedDays[key] = JSON.stringify(remote.days); // merged, not edited here
+        }
+      });
+    }
+    Object.keys(state.deleted.weeks).forEach(function (key) {
+      var local = state.weeks[key];
+      if (local && (local.mod || 0) <= state.deleted.weeks[key]) delete state.weeks[key];
+    });
+
+    var remoteFuel = sanitizeFuel(raw.fuel);
+
+    remoteFuel.cars.forEach(function (remote) {
+      if ((remote.mod || 0) <= (state.deleted.cars[remote.plate] || 0)) return;
+      var local = null;
+      state.fuel.cars.forEach(function (c) { if (c.plate === remote.plate) local = c; });
+      if (!local) {
+        state.fuel.cars.push(remote);
+      } else if ((remote.mod || 0) > (local.mod || 0)) {
+        state.fuel.cars = state.fuel.cars.map(function (c) {
+          return c.plate === remote.plate ? remote : c;
+        });
+      }
+    });
+    state.fuel.cars = state.fuel.cars.filter(function (c) {
+      var tomb = state.deleted.cars[c.plate];
+      return !tomb || (c.mod || 0) > tomb;
+    });
+
+    var fillsById = {};
+    state.fuel.fills.forEach(function (f) { fillsById[f.id] = f; });
+    remoteFuel.fills.forEach(function (remote) {
+      if ((remote.mod || 0) <= (state.deleted.fills[remote.id] || 0)) return;
+      var local = fillsById[remote.id];
+      if (!local) {
+        state.fuel.fills.push(remote);
+        fillsById[remote.id] = remote;
+      } else if ((remote.mod || 0) > (local.mod || 0)) {
+        state.fuel.fills = state.fuel.fills.map(function (f) {
+          return f.id === remote.id ? remote : f;
+        });
+        fillsById[remote.id] = remote;
+      }
+    });
+    state.fuel.fills = state.fuel.fills.filter(function (f) {
+      var tomb = state.deleted.fills[f.id];
+      return !tomb || (f.mod || 0) > tomb;
+    });
+
+    Object.keys(remoteFuel.lookups).forEach(function (key) {
+      if (!state.fuel.lookups[key]) state.fuel.lookups[key] = remoteFuel.lookups[key];
+    });
+
+    if (!state.fuel.cars.some(function (c) { return c.plate === state.fuel.selectedCar; })) {
+      state.fuel.selectedCar = state.fuel.cars.length ? state.fuel.cars[0].plate : null;
+    }
+  }
+
+  // Pull the remote copy, merge it in, push the merged result back.
+  function syncNow() {
+    if (!state.syncCode) return;
+    var url = LOOKUP_WORKER_URL + '/sync/' + state.syncCode;
+    syncNowBtn.disabled = true;
+    syncNowBtn.textContent = 'Syncing…';
+    fetch(url)
+      .then(function (res) {
+        if (res.status === 404) return null; // first sync under this code
+        if (!res.ok) throw new Error('pull failed');
+        return res.json();
+      })
+      .then(function (remote) {
+        if (remote) mergeRemote(remote);
+        return fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(syncPayload())
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error('push failed');
+        state.lastSyncAt = Date.now();
+        setWeek(state.selectedWeek); // re-render both tabs from merged state
+        renderFuel();
+        showToast('Synced ✓');
+      })
+      .catch(function () {
+        showToast('Sync failed — check your connection and try again');
+      })
+      .then(function () {
+        syncNowBtn.disabled = false;
+        syncNowBtn.textContent = 'Sync now';
+        renderSync();
+      });
+  }
+
+  createSyncBtn.addEventListener('click', function () {
+    state.syncCode = generateSyncCode();
+    saveState();
+    renderSync();
+    syncNow();
+  });
+
+  enterSyncBtn.addEventListener('click', function () {
+    syncCodeForm.hidden = false;
+    syncCodeInput.focus();
+  });
+
+  syncCodeForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var code = syncCodeInput.value.trim();
+    if (!SYNC_CODE_RE.test(code)) {
+      showToast('That doesn’t look like a sync code');
+      return;
+    }
+    state.syncCode = code;
+    syncCodeInput.value = '';
+    syncCodeForm.hidden = true;
+    saveState();
+    renderSync();
+    syncNow();
+  });
+
+  syncCodeShow.addEventListener('click', function () {
+    copyText(state.syncCode).then(function () {
+      showToast('Sync code copied — paste it on your other device');
+    }).catch(function () {
+      showToast('Couldn’t copy — long-press the code to copy it');
+    });
+  });
+
+  stopSyncBtn.addEventListener('click', function () {
+    if (!window.confirm('Stop syncing on this device? Your data stays here ' +
+        'and on Cloudflare, and other devices keep syncing.')) return;
+    state.syncCode = null;
+    state.lastSyncAt = null;
+    saveState();
+    renderSync();
+  });
+
+  syncNowBtn.addEventListener('click', syncNow);
+
   prevWeekBtn.addEventListener('click', function () {
     setWeek(toISODate(addDays(parseISODate(state.selectedWeek), -7)));
   });
@@ -750,6 +1019,7 @@
     });
     appTitle.textContent = TABS[tab].title;
     if (tab === 'fuel') renderFuel();
+    if (tab === 'backup') renderSync();
     saveState();
   }
 
@@ -1031,6 +1301,7 @@
         del.setAttribute('aria-label', 'Delete fill-up on ' + (f.date || 'unknown date'));
         del.addEventListener('click', function () {
           if (!window.confirm('Delete this fill-up?')) return;
+          state.deleted.fills[f.id] = Date.now();
           state.fuel.fills = state.fuel.fills.filter(function (x) { return x.id !== f.id; });
           if (editingFillId === f.id) resetFillForm();
           renderFuel();
@@ -1208,10 +1479,15 @@
       car.state = carStateSelect.value;
       car.tank = tank;
       car.economy = economy;
+      car.mod = Date.now();
       if (plate !== car.plate) {
         state.fuel.fills.forEach(function (f) {
-          if (f.car === car.plate) f.car = plate;
+          if (f.car === car.plate) {
+            f.car = plate;
+            f.mod = Date.now();
+          }
         });
+        state.deleted.cars[car.plate] = Date.now(); // old plate is gone
         car.plate = plate;
       }
       state.fuel.selectedCar = plate;
@@ -1219,7 +1495,7 @@
     } else {
       state.fuel.cars.push({
         plate: plate, type: carTypeInput.value.trim(), state: carStateSelect.value,
-        economy: economy, tank: tank
+        economy: economy, tank: tank, mod: Date.now()
       });
       state.fuel.selectedCar = plate;
       showToast('Added ' + plate);
@@ -1236,6 +1512,10 @@
     var count = carFills(car.plate).length;
     if (!window.confirm('Remove ' + car.plate +
         (count ? ' and its ' + count + ' fill-up' + (count === 1 ? '' : 's') : '') + '?')) return;
+    state.deleted.cars[car.plate] = Date.now();
+    state.fuel.fills.forEach(function (f) {
+      if (f.car === car.plate) state.deleted.fills[f.id] = Date.now();
+    });
     state.fuel.cars = state.fuel.cars.filter(function (c) { return c.plate !== car.plate; });
     state.fuel.fills = state.fuel.fills.filter(function (f) { return f.car !== car.plate; });
     state.fuel.selectedCar = state.fuel.cars.length ? state.fuel.cars[0].plate : null;
@@ -1274,6 +1554,7 @@
         return;
       }
       car.economy = economy;
+      car.mod = Date.now();
     }
 
     if (editingFillId) {
@@ -1285,6 +1566,7 @@
         f.cost = cost;
         f.fromEmpty = fillFromEmpty.checked;
         f.toFull = fillToFull.checked;
+        f.mod = Date.now();
       });
       showToast('Fill-up updated');
     } else {
@@ -1296,7 +1578,8 @@
         litres: litres,
         cost: cost,
         fromEmpty: fillFromEmpty.checked,
-        toFull: fillToFull.checked
+        toFull: fillToFull.checked,
+        mod: Date.now()
       });
       showToast('Fill-up saved');
     }
