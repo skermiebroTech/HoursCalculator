@@ -1132,6 +1132,10 @@
         '&state=' + encodeURIComponent(carState))
       .then(function (res) {
         var remaining = res.headers.get('X-RateLimit-Remaining');
+        if (res.status === 429) {
+          showToast('Lookup limit reached — wait a minute and try again');
+          return;
+        }
         return res.json().then(function (data) {
           if (!data.success || !data.vehicle) {
             showToast('No match for ' + plate + ' (' + carState + ') — enter the model manually');
