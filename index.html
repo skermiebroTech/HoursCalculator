@@ -71,10 +71,14 @@
       <section class="card" aria-labelledby="backupHeading">
         <h2 id="backupHeading" class="section-title">Backup &amp; transfer</h2>
         <div class="backup-row">
-          <button type="button" id="exportBtn" class="btn">Export backup</button>
+          <button type="button" id="exportBtn" class="btn">Export all</button>
           <button type="button" id="importBtn" class="btn">Import backup</button>
         </div>
-        <p class="backup-note">Save a file to move your hours and fuel data to another device or keep a copy. Importing merges the file back in and replaces any weeks or cars with matching dates or plates.</p>
+        <div class="backup-row">
+          <button type="button" id="exportHoursBtn" class="btn">Export hours</button>
+          <button type="button" id="exportFuelBtn" class="btn">Export fuel</button>
+        </div>
+        <p class="backup-note">Save a file to move your data to another device or keep a copy — everything at once, or just the hours or just the fuel. Importing accepts any of those files, merges it back in, and replaces any weeks or cars with matching dates or plates.</p>
         <input type="file" id="importInput" accept="application/json,.json" hidden>
       </section>
     </main>

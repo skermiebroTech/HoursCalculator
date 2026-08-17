@@ -620,6 +620,10 @@ input:focus-visible {
   gap: 8px;
 }
 
+.backup-row + .backup-row {
+  margin-top: 8px;
+}
+
 .backup-note {
   margin: 10px 0 0;
   font-size: 0.85rem;

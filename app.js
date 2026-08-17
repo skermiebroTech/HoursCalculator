@@ -282,6 +282,8 @@
   var duplicateBtn = document.getElementById('duplicateBtn');
   var restoreBtn = document.getElementById('restoreBtn');
   var exportBtn = document.getElementById('exportBtn');
+  var exportHoursBtn = document.getElementById('exportHoursBtn');
+  var exportFuelBtn = document.getElementById('exportFuelBtn');
   var importBtn = document.getElementById('importBtn');
   var importInput = document.getElementById('importInput');
   var themeToggle = document.getElementById('themeToggle');
@@ -571,33 +573,55 @@
     showToast('Mon–Fri schedule restored');
   });
 
-  function pluralWeeks(n) { return n + (n === 1 ? ' week' : ' weeks'); }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
 
-  // Download every saved week as a JSON file for backup or transfer.
-  function exportBackup() {
-    var weeks = savedWeeksObject();
-    var count = Object.keys(weeks).length;
-    if (!count && !state.fuel.cars.length && !state.fuel.fills.length) {
-      showToast('Nothing saved yet to export');
+  function pluralWeeks(n) { return plural(n, 'week'); }
+
+  // "3 weeks of hours, 2 cars, 12 fill-ups" — empty when there is nothing at all.
+  function describeData(weekCount, carCount, fillCount) {
+    var parts = [];
+    if (weekCount) parts.push(pluralWeeks(weekCount) + ' of hours');
+    if (carCount) parts.push(plural(carCount, 'car'));
+    if (fillCount) parts.push(plural(fillCount, 'fill-up'));
+    return parts.join(', ');
+  }
+
+  var NOTHING_TO_EXPORT = {
+    hours: 'No hours saved yet to export',
+    fuel: 'No fuel data saved yet to export',
+    all: 'Nothing saved yet to export'
+  };
+
+  // Download saved data as a JSON file for backup or transfer. The scope picks
+  // hours only, fuel only, or everything; import accepts any of the three.
+  function exportData(scope) {
+    var weeks = scope === 'fuel' ? {} : savedWeeksObject();
+    var cars = scope === 'hours' ? [] : state.fuel.cars;
+    var fills = scope === 'hours' ? [] : state.fuel.fills;
+    var summary = describeData(Object.keys(weeks).length, cars.length, fills.length);
+    if (!summary) {
+      showToast(NOTHING_TO_EXPORT[scope]);
       return;
     }
     var payload = {
       app: 'weekly-hours',
       version: 2,
+      scope: scope,
       exportedAt: new Date().toISOString(),
       weeks: weeks,
-      fuel: { cars: state.fuel.cars, fills: state.fuel.fills }
+      fuel: { cars: cars, fills: fills }
     };
     var url = URL.createObjectURL(
       new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'weekly-hours-backup-' + toISODate(new Date()) + '.json';
+    a.download = 'weekly-hours-' + (scope === 'all' ? 'backup' : scope) + '-' +
+      toISODate(new Date()) + '.json';
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    showToast('Exported ' + pluralWeeks(count));
+    showToast('Exported ' + summary);
   }
 
   // Read a previously exported file and merge its weeks into the current data.
@@ -607,13 +631,15 @@
       var raw;
       try { raw = JSON.parse(reader.result); }
       catch (e) { showToast('That file isn’t a valid backup'); return; }
-      if (!raw || typeof raw !== 'object' || !raw.weeks || typeof raw.weeks !== 'object') {
+      var hasWeeks = raw && raw.weeks && typeof raw.weeks === 'object';
+      var hasFuel = raw && raw.fuel && typeof raw.fuel === 'object';
+      if (!raw || typeof raw !== 'object' || (!hasWeeks && !hasFuel)) {
         showToast('That file isn’t a valid backup');
         return;
       }
 
       var incoming = {};
-      Object.keys(raw.weeks).forEach(function (key) {
+      Object.keys(hasWeeks ? raw.weeks : {}).forEach(function (key) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
         var week = sanitizeWeek(raw.weeks[key]);
         if (weekHasEntries(week)) incoming[key] = week;
@@ -626,13 +652,8 @@
         showToast('No hours or fuel data found in that file');
         return;
       }
-      var parts = [];
-      if (keys.length) parts.push(pluralWeeks(keys.length) + ' of hours');
-      if (incomingFuel.cars.length) {
-        parts.push(incomingFuel.cars.length + (incomingFuel.cars.length === 1 ? ' car' : ' cars'));
-      }
-      if (incomingFuel.fills.length) parts.push(incomingFuel.fills.length + ' fill-ups');
-      if (!window.confirm('Import ' + parts.join(', ') +
+      var summary = describeData(keys.length, incomingFuel.cars.length, incomingFuel.fills.length);
+      if (!window.confirm('Import ' + summary +
           ' from this backup? Matching weeks and cars will be replaced.')) return;
 
       keys.forEach(function (key) { state.weeks[key] = incoming[key]; });
@@ -659,7 +680,9 @@
     reader.readAsText(file);
   }
 
-  exportBtn.addEventListener('click', exportBackup);
+  exportBtn.addEventListener('click', function () { exportData('all'); });
+  exportHoursBtn.addEventListener('click', function () { exportData('hours'); });
+  exportFuelBtn.addEventListener('click', function () { exportData('fuel'); });
   importBtn.addEventListener('click', function () { importInput.click(); });
   importInput.addEventListener('change', function () {
     if (importInput.files && importInput.files[0]) importBackup(importInput.files[0]);
@@ -740,9 +763,8 @@
   var addCarBtn = document.getElementById('addCarBtn');
   var carForm = document.getElementById('carForm');
   // Plate lookups go through a Cloudflare Worker (see worker/) so the
-  // plateapi.com.au API key never ships in this file. Set this to your
-  // deployed worker URL, e.g. 'https://plate-lookup.<subdomain>.workers.dev'.
-  var LOOKUP_WORKER_URL = '';
+  // plateapi.com.au API key never ships in this file.
+  var LOOKUP_WORKER_URL = 'https://plate-lookup.skermiebro.workers.dev';
 
   var carPlateInput = document.getElementById('carPlate');
   var carTypeInput = document.getElementById('carType');
