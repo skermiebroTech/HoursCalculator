@@ -189,6 +189,10 @@
             <input type="checkbox" id="fillToFull">
             <span>Filled the tank up to full</span>
           </label>
+          <label class="fill-empty-toggle">
+            <input type="checkbox" id="fillGapBefore">
+            <span>I missed a fill-up before this one (skip it in the stats)</span>
+          </label>
           <button type="submit" id="fillSubmitBtn" class="btn btn-primary">Add fill-up</button>
           <button type="button" id="cancelFillEditBtn" class="btn btn-cancel-edit" hidden>Cancel edit</button>
         </form>
@@ -198,6 +202,11 @@
         <h2 id="fuelStatsHeading" class="section-title">Stats</h2>
         <div class="stat-grid" id="statGrid"></div>
         <p id="statNote" class="backup-note" hidden></p>
+      </section>
+
+      <section class="card" id="fuelChartsCard" aria-labelledby="fuelChartsHeading" hidden>
+        <h2 id="fuelChartsHeading" class="section-title">Graphs</h2>
+        <div id="chartList"></div>
       </section>
 
       <section class="card" id="fillHistoryCard" aria-labelledby="fillHistoryHeading" hidden>

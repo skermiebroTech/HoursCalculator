@@ -83,7 +83,8 @@
       litres: raw.litres,
       cost: (typeof raw.cost === 'number' && isFinite(raw.cost) && raw.cost >= 0) ? raw.cost : 0,
       fromEmpty: raw.fromEmpty === true,
-      toFull: raw.toFull === true
+      toFull: raw.toFull === true,
+      gapBefore: raw.gapBefore === true
     };
   }
 
@@ -1068,9 +1069,12 @@
   var fillEconomy = document.getElementById('fillEconomy');
   var fillFromEmpty = document.getElementById('fillFromEmpty');
   var fillToFull = document.getElementById('fillToFull');
+  var fillGapBefore = document.getElementById('fillGapBefore');
   var fillSubmitBtn = document.getElementById('fillSubmitBtn');
   var cancelFillEditBtn = document.getElementById('cancelFillEditBtn');
   var fuelStatsCard = document.getElementById('fuelStatsCard');
+  var fuelChartsCard = document.getElementById('fuelChartsCard');
+  var chartList = document.getElementById('chartList');
   var statGrid = document.getElementById('statGrid');
   var statNote = document.getElementById('statNote');
   var fillHistoryCard = document.getElementById('fillHistoryCard');
@@ -1103,7 +1107,9 @@
    * standard trip method: everything added after full fill A up to and
    * including full fill B was burned over that distance), or failing that
    * between two "tank was empty" fills. With neither, we fall back to the
-   * user's estimated L/100km.
+   * user's estimated L/100km. A fill flagged "gapBefore" (the user missed
+   * a fill-up before it) drops the interval that contains it from the
+   * measurement, since the burned litres for that stretch are unknown.
    *
    * Estimated range = fuel believed to be in the tank right now divided by
    * economy. After a "filled to full" fill with a known tank size that's a
@@ -1118,6 +1124,8 @@
       totalLitres: 0,
       measuredEconomy: null,
       measuredKm: 0,
+      skippedIntervals: 0,
+      intervals: [],
       economy: car.economy,
       range: null,
       rangeApprox: false,
@@ -1135,21 +1143,33 @@
       if (f.toFull) fullIdx.push(i);
     });
 
+    // True when any fill in [from, to] follows a missed fill-up.
+    function hasGap(from, to) {
+      for (var g = from; g <= to; g++) {
+        if (fills[g].gapBefore) return true;
+      }
+      return false;
+    }
+
     // Sum litres burned over the distance covered by a list of marker fills.
     // Full-to-full intervals burn the fuel added after A up to and including
     // B; empty-to-empty intervals burn the fuel added from A up to but not
     // including B.
     function measureIntervals(idx, includeEnd) {
-      var out = { litres: 0, km: 0 };
+      var out = { litres: 0, km: 0, skipped: 0, list: [] };
       for (var p = 1; p < idx.length; p++) {
         var a = idx[p - 1];
         var b = idx[p];
         var dist = fills[b].odo - fills[a].odo;
         if (dist <= 0) continue;
+        if (hasGap(a + 1, b)) { out.skipped++; continue; }
+        var used = 0;
         for (var j = a; j < b; j++) {
-          out.litres += fills[includeEnd ? j + 1 : j].litres;
+          used += fills[includeEnd ? j + 1 : j].litres;
         }
+        out.litres += used;
         out.km += dist;
+        out.list.push({ date: fills[b].date, km: dist, litres: used, economy: used / dist * 100 });
       }
       return out;
     }
@@ -1160,6 +1180,8 @@
       measured = measureIntervals(emptyIdx, false);
       stats.method = 'empty';
     }
+    stats.skippedIntervals = measured.skipped;
+    stats.intervals = measured.list;
     if (measured.km > 0) {
       stats.measuredEconomy = measured.litres / measured.km * 100;
       stats.measuredKm = measured.km;
@@ -1173,13 +1195,14 @@
       var inTank;
       if (last.toFull && car.tank) {
         inTank = car.tank;
-      } else if (emptyIdx.length) {
+      } else if (emptyIdx.length && !hasGap(emptyIdx[emptyIdx.length - 1] + 1, fills.length - 1)) {
         var lastEmpty = emptyIdx[emptyIdx.length - 1];
         inTank = 0;
         for (var k = lastEmpty; k < fills.length; k++) inTank += fills[k].litres;
         inTank -= (last.odo - fills[lastEmpty].odo) / 100 * stats.economy;
       } else {
-        // Never filled from empty: we only know about the last top-up.
+        // Never filled from empty (or a fill-up was missed since): we only
+        // know about the last top-up.
         inTank = last.litres;
         stats.rangeApprox = true;
       }
@@ -1190,6 +1213,257 @@
       stats.fullRange = car.tank / stats.economy * 100;
     }
     return stats;
+  }
+
+  // ------------------------------------------------------------------ charts
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    return el;
+  }
+
+  function shortDate(iso) {
+    return parseISODate(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+
+  function monthLabel(key) {
+    var parts = key.split('-');
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, 1)
+      .toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+  }
+
+  // Pick a round step so the y-axis gets 3 to 5 clean ticks from a round
+  // floor at or below min up to a round ceiling at or above max.
+  function niceTicks(min, max) {
+    if (!(max > min)) max = min + 1;
+    var rough = (max - min) / 4;
+    var mag = Math.pow(10, Math.floor(Math.log10(rough)));
+    var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * mag; })
+      .filter(function (v) { return v >= rough; })[0];
+    var ticks = [];
+    var start = Math.floor(min / step) * step;
+    for (var v = start; v <= max + step * 0.999; v += step) ticks.push(Math.round(v * 1000) / 1000);
+    return ticks;
+  }
+
+  /*
+   * Draw one single-series chart into an <svg>. Points are { label, value,
+   * detail } in x order. kind is 'line' (dots joined by a 2px line) or
+   * 'bar' (thin columns). The chart owns its tooltip, keyboard focus and
+   * a table view, so nothing depends on the hover alone.
+   */
+  function buildChart(spec) {
+    var W = 320, H = 170;
+    var pad = { top: 10, right: 12, bottom: 24, left: 40 };
+    var plotW = W - pad.left - pad.right;
+    var plotH = H - pad.top - pad.bottom;
+    var points = spec.points;
+    var values = points.map(function (p) { return p.value; });
+    var max = Math.max.apply(null, values);
+    // Bars grow from zero; a line only needs to show the band the data sits in.
+    var min = spec.kind === 'bar' ? 0 : Math.min.apply(null, values);
+    var ticks = niceTicks(min, max);
+    var yMin = ticks[0];
+    var yMax = ticks[ticks.length - 1];
+
+    var fig = document.createElement('figure');
+    fig.className = 'chart';
+    var cap = document.createElement('figcaption');
+    cap.className = 'chart-title';
+    cap.textContent = spec.title;
+    fig.appendChild(cap);
+
+    var wrap = document.createElement('div');
+    wrap.className = 'chart-plot';
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img' });
+    svg.setAttribute('aria-label', spec.title);
+    wrap.appendChild(svg);
+    var tip = document.createElement('div');
+    tip.className = 'chart-tip';
+    tip.hidden = true;
+    wrap.appendChild(tip);
+    fig.appendChild(wrap);
+
+    function y(v) { return pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH; }
+    function x(i) {
+      if (spec.kind === 'bar') return pad.left + (i + 0.5) * (plotW / points.length);
+      if (points.length === 1) return pad.left + plotW / 2;
+      return pad.left + (i / (points.length - 1)) * plotW;
+    }
+
+    // Gridlines and y ticks.
+    ticks.forEach(function (t) {
+      svg.appendChild(svgEl('line', { x1: pad.left, x2: W - pad.right, y1: y(t), y2: y(t), 'class': 'chart-grid' }));
+      var lab = svgEl('text', { x: pad.left - 6, y: y(t) + 3.5, 'class': 'chart-tick', 'text-anchor': 'end' });
+      lab.textContent = spec.format(t, true);
+      svg.appendChild(lab);
+    });
+
+    // A few x labels: first, last, and evenly spaced ones between.
+    var slots = Math.min(points.length, 4);
+    var shown = {};
+    for (var k = 0; k < slots; k++) {
+      shown[Math.round(k * (points.length - 1) / Math.max(1, slots - 1))] = true;
+    }
+    points.forEach(function (p, i) {
+      if (!shown[i]) return;
+      var anchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
+      if (points.length === 1) anchor = 'middle';
+      var lab = svgEl('text', { x: x(i), y: H - 6, 'class': 'chart-tick', 'text-anchor': anchor });
+      lab.textContent = p.label;
+      svg.appendChild(lab);
+    });
+
+    function showTip(i) {
+      var p = points[i];
+      tip.innerHTML = '';
+      var val = document.createElement('strong');
+      val.textContent = spec.format(p.value, false);
+      var lab = document.createElement('span');
+      lab.textContent = p.detail || p.label;
+      tip.appendChild(val);
+      tip.appendChild(lab);
+      tip.hidden = false;
+      var px = x(i) / W * 100;
+      tip.style.left = px + '%';
+      tip.style.transform = 'translateX(' + (px > 65 ? '-100%' : (px < 35 ? '0' : '-50%')) + ')';
+      Array.prototype.forEach.call(svg.querySelectorAll('.chart-mark'), function (m, j) {
+        m.classList.toggle('active', j === i);
+      });
+    }
+    function hideTip() {
+      tip.hidden = true;
+      Array.prototype.forEach.call(svg.querySelectorAll('.chart-mark'), function (m) {
+        m.classList.remove('active');
+      });
+    }
+
+    if (spec.kind === 'line' && points.length > 1) {
+      var d = points.map(function (p, i) {
+        return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.value).toFixed(1);
+      }).join(' ');
+      svg.appendChild(svgEl('path', { d: d, 'class': 'chart-line' }));
+    }
+
+    var barW = Math.min(24, plotW / points.length - 2);
+    points.forEach(function (p, i) {
+      var g = svgEl('g', { 'class': 'chart-mark', tabindex: '0' });
+      var title = svgEl('title');
+      title.textContent = spec.format(p.value, false) + ' — ' + (p.detail || p.label);
+      g.appendChild(title);
+      if (spec.kind === 'bar') {
+        var top = y(p.value);
+        var base = pad.top + plotH;
+        var r = Math.min(4, (base - top) / 2, barW / 2);
+        var left = x(i) - barW / 2;
+        var path = 'M' + left + ' ' + base +
+          ' V' + (top + r) + ' Q' + left + ' ' + top + ' ' + (left + r) + ' ' + top +
+          ' H' + (left + barW - r) + ' Q' + (left + barW) + ' ' + top + ' ' + (left + barW) + ' ' + (top + r) +
+          ' V' + base + ' Z';
+        g.appendChild(svgEl('path', { d: path, 'class': 'chart-bar' }));
+        g.appendChild(svgEl('rect', {
+          x: x(i) - plotW / points.length / 2, y: pad.top, width: plotW / points.length, height: plotH,
+          'class': 'chart-hit'
+        }));
+      } else {
+        g.appendChild(svgEl('circle', { cx: x(i), cy: y(p.value), r: 12, 'class': 'chart-hit' }));
+        g.appendChild(svgEl('circle', { cx: x(i), cy: y(p.value), r: 4, 'class': 'chart-dot' }));
+      }
+      g.addEventListener('pointerenter', function () { showTip(i); });
+      g.addEventListener('focus', function () { showTip(i); });
+      g.addEventListener('blur', hideTip);
+      svg.appendChild(g);
+    });
+    svg.addEventListener('pointerleave', hideTip);
+
+    // Table view: the same numbers without the picture.
+    var details = document.createElement('details');
+    details.className = 'chart-table';
+    var summary = document.createElement('summary');
+    summary.textContent = 'Show as table';
+    details.appendChild(summary);
+    var table = document.createElement('table');
+    var tbody = document.createElement('tbody');
+    points.forEach(function (p) {
+      var tr = document.createElement('tr');
+      var th = document.createElement('th');
+      th.scope = 'row';
+      th.textContent = p.detail || p.label;
+      var td = document.createElement('td');
+      td.textContent = spec.format(p.value, false);
+      tr.appendChild(th);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    details.appendChild(table);
+    fig.appendChild(details);
+    return fig;
+  }
+
+  function renderCharts(stats) {
+    chartList.innerHTML = '';
+    var specs = [];
+
+    if (stats.intervals.length >= 2) {
+      specs.push({
+        title: 'Measured economy, L/100km per interval',
+        kind: 'line',
+        points: stats.intervals.map(function (iv) {
+          return {
+            label: shortDate(iv.date),
+            detail: 'to ' + formatFillDate(iv.date) + ', ' + Math.round(iv.km) + ' km',
+            value: iv.economy
+          };
+        }),
+        format: function (v, tick) { return tick ? String(round1(v)) : round1(v) + ' L/100km'; }
+      });
+    }
+
+    var priced = stats.fills.filter(function (f) { return f.cost > 0 && f.date; });
+    if (priced.length >= 2) {
+      specs.push({
+        title: 'Price per litre',
+        kind: 'line',
+        points: priced.map(function (f) {
+          return { label: shortDate(f.date), detail: formatFillDate(f.date), value: f.cost / f.litres };
+        }),
+        format: function (v, tick) { return tick ? v.toFixed(2) : '$' + v.toFixed(2) + '/L'; }
+      });
+    }
+
+    var months = {};
+    stats.fills.forEach(function (f) {
+      if (!f.date) return;
+      var key = f.date.slice(0, 7);
+      months[key] = (months[key] || 0) + f.cost;
+    });
+    var monthKeys = Object.keys(months).sort();
+    if (monthKeys.length >= 2) {
+      // Fill in months with no fills so the bars keep an even time scale.
+      var all = [];
+      var cur = monthKeys[0];
+      while (cur <= monthKeys[monthKeys.length - 1] && all.length < 60) {
+        all.push(cur);
+        var parts = cur.split('-');
+        var next = new Date(Number(parts[0]), Number(parts[1]), 1);
+        cur = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+      }
+      specs.push({
+        title: 'Spend per month',
+        kind: 'bar',
+        points: all.map(function (key) {
+          return { label: monthLabel(key), detail: monthLabel(key), value: months[key] || 0 };
+        }),
+        format: function (v, tick) { return tick ? '$' + Math.round(v) : '$' + v.toFixed(2); }
+      });
+    }
+
+    fuelChartsCard.hidden = !specs.length;
+    specs.forEach(function (spec) { chartList.appendChild(buildChart(spec)); });
   }
 
   function renderCarSelect() {
@@ -1235,6 +1509,7 @@
     fillCard.hidden = !car || addingCar;
     if (!car) {
       fuelStatsCard.hidden = true;
+      fuelChartsCard.hidden = true;
       fillHistoryCard.hidden = true;
       saveState();
       return;
@@ -1252,6 +1527,7 @@
 
     fuelStatsCard.hidden = !stats.fills.length;
     fillHistoryCard.hidden = !stats.fills.length;
+    renderCharts(stats);
     if (stats.fills.length) {
       statGrid.innerHTML = '';
       if (stats.range !== null) {
@@ -1277,7 +1553,9 @@
       if (stats.measuredEconomy) {
         statNote.hidden = false;
         statNote.textContent = 'Economy measured over ' + Math.round(stats.measuredKm) +
-          ' km of ' + (stats.method === 'full' ? 'full-to-full' : 'empty-to-empty') + ' fills.';
+          ' km of ' + (stats.method === 'full' ? 'full-to-full' : 'empty-to-empty') + ' fills.' +
+          (stats.skippedIntervals ? ' Skipped ' + plural(stats.skippedIntervals, 'interval') +
+            ' with a missed fill-up.' : '');
       } else if (stats.rangeApprox) {
         statNote.hidden = false;
         statNote.textContent = '* Based on the last fill only — tick “filled up to full” or ' +
@@ -1294,7 +1572,8 @@
         main.className = 'fill-main';
         var top = document.createElement('strong');
         top.textContent = round1(f.litres) + ' L · $' + f.cost.toFixed(2) +
-          (f.fromEmpty ? ' · from empty' : '') + (f.toFull ? ' · to full' : '');
+          (f.fromEmpty ? ' · from empty' : '') + (f.toFull ? ' · to full' : '') +
+          (f.gapBefore ? ' · missed fill before' : '');
         var sub = document.createElement('span');
         sub.textContent = (f.date ? formatFillDate(f.date) + ' · ' : '') +
           Math.round(f.odo).toLocaleString() + ' km';
@@ -1348,6 +1627,7 @@
     fillCost.value = String(fill.cost);
     fillFromEmpty.checked = fill.fromEmpty;
     fillToFull.checked = fill.toFull;
+    fillGapBefore.checked = fill.gapBefore;
     fillSubmitBtn.textContent = 'Save changes';
     cancelFillEditBtn.hidden = false;
     fillCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1578,6 +1858,7 @@
         f.cost = cost;
         f.fromEmpty = fillFromEmpty.checked;
         f.toFull = fillToFull.checked;
+        f.gapBefore = fillGapBefore.checked;
         f.mod = Date.now();
       });
       showToast('Fill-up updated');
@@ -1591,6 +1872,7 @@
         cost: cost,
         fromEmpty: fillFromEmpty.checked,
         toFull: fillToFull.checked,
+        gapBefore: fillGapBefore.checked,
         mod: Date.now()
       });
       showToast('Fill-up saved');

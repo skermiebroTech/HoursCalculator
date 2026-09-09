@@ -630,6 +630,127 @@ input:focus-visible {
   color: var(--muted);
 }
 
+/* -------------------------------- charts ---------------------------------- */
+
+.chart {
+  margin: 0 0 14px;
+}
+
+.chart:last-child { margin-bottom: 0; }
+
+.chart-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.chart-plot {
+  position: relative;
+}
+
+.chart-plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-tick {
+  font-size: 10px;
+  fill: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-dot {
+  fill: var(--accent);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
+.chart-bar {
+  fill: var(--accent);
+}
+
+.chart-hit {
+  fill: transparent;
+}
+
+.chart-mark {
+  cursor: pointer;
+  outline: none;
+}
+
+.chart-mark.active .chart-dot { r: 6; }
+.chart-mark.active .chart-bar,
+.chart-mark:focus-visible .chart-bar { fill: var(--accent-strong); }
+.chart-mark:focus-visible .chart-dot { stroke: var(--focus); }
+
+.chart-tip {
+  position: absolute;
+  top: 0;
+  padding: 6px 10px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}
+
+.chart-tip strong {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tip span {
+  opacity: 0.8;
+}
+
+.chart-table {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.chart-table summary {
+  cursor: pointer;
+}
+
+.chart-table table {
+  margin-top: 6px;
+  border-collapse: collapse;
+  width: 100%;
+  color: var(--text);
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: 400;
+}
+
+.chart-table td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --------------------------------- sync ----------------------------------- */
 
 .sync-code-row {

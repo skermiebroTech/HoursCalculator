@@ -7,7 +7,7 @@
  * visitors pick up the new version.
  */
 
-var CACHE_NAME = 'weekly-hours-v11';
+var CACHE_NAME = 'weekly-hours-v12';
 var ASSETS = [
   './',
   './index.html',
